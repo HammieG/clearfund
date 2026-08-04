@@ -1,0 +1,148 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  DONOR
+  NGO
+  ADMIN
+}
+
+enum CaseStatus {
+  ACTIVE
+  FUNDED
+}
+
+enum Currency {
+  INR
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  BANK_TRANSFER
+}
+
+enum LedgerStatus {
+  PLEDGED
+  VERIFIED
+  REJECTED
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  passwordHash  String?   @map("password_hash")
+  role          UserRole  @default(DONOR)
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  foundation    Foundation?
+  ledgerEntries LedgerEntry[]
+  accounts      Account[]
+  sessions      Session[]
+
+  @@map("users")
+}
+
+model Foundation {
+  id               String   @id @default(cuid())
+  ownerId          String   @unique @map("user_id")
+  name             String
+  description      String   @db.Text
+  verified         Boolean  @default(false)
+  totalLoggedFunds Decimal  @default(0) @map("total_logged_funds") @db.Decimal(14, 2)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  owner User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  cases Case[]
+
+  @@index([verified])
+  @@map("foundations")
+}
+
+model Case {
+  id           String     @id @default(cuid())
+  foundationId String     @map("foundation_id")
+  title        String
+  description  String     @db.Text
+  goalAmount   Decimal    @map("goal_amount") @db.Decimal(14, 2)
+  raisedAmount Decimal    @default(0) @map("raised_amount") @db.Decimal(14, 2)
+  status       CaseStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  foundation    Foundation    @relation(fields: [foundationId], references: [id], onDelete: Cascade)
+  ledgerEntries LedgerEntry[]
+
+  @@index([foundationId, status])
+  @@map("cases")
+}
+
+model LedgerEntry {
+  id             String        @id @default(cuid())
+  donorId        String        @map("donor_id")
+  caseId         String        @map("case_id")
+  amount         Decimal       @db.Decimal(14, 2)
+  currency       Currency      @default(INR)
+  paymentMethod  PaymentMethod @map("payment_method")
+  status         LedgerStatus  @default(PLEDGED)
+  proofReference String?       @map("proof_reference")
+  timestamp      DateTime      @default(now())
+
+  donor User @relation(fields: [donorId], references: [id], onDelete: Restrict)
+  case  Case @relation(fields: [caseId], references: [id], onDelete: Restrict)
+
+  @@index([caseId, status, timestamp])
+  @@index([donorId, status, timestamp])
+  @@index([status, timestamp])
+  @@map("ledger_entries")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refreshToken      String? @map("refresh_token") @db.Text
+  accessToken       String? @map("access_token") @db.Text
+  expiresAt         Int?    @map("expires_at")
+  tokenType         String? @map("token_type")
+  scope             String?
+  idToken           String? @map("id_token") @db.Text
+  sessionState      String? @map("session_state")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
